@@ -7,4 +7,3 @@ helm repo update
 
 helm upgrade -i prometheus prometheus-community/prometheus \
     --namespace prometheus \
-    --set server.extraArgs.storage.tsdb.retention.time="90d"
