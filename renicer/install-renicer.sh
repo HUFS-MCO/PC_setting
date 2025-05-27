@@ -2,7 +2,8 @@
 
 set -e
 
-echo "📦 [1/4] renicer-daemon 설치 중..."
+echo "📦 [1/4] renicer-daemon 빌드 및 설치 중..."
+go build -o renicer-daemon main.go
 sudo cp renicer-daemon /usr/local/bin/
 sudo chmod +x /usr/local/bin/renicer-daemon
 

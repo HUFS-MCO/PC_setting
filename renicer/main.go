@@ -75,7 +75,7 @@ func main() {
         socketPath := "/var/run/renicer.sock"
         //_ = exec.Command("rm", "-f", socketPath).Run()
 
-        listener, err := net.Listen("tcp", "127.0.0.1:8080")
+        listener, err := net.Listen("tcp", "0.0.0.0:8080")
         if err != nil {
                 log.Fatalf("Failed to listen on socket: %v", err)
         }
