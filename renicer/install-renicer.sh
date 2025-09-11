@@ -2,6 +2,12 @@
 
 set -e
 
+echo "🧹 [0/5] 기존 renicer-daemon 정리 중..."
+sudo systemctl stop renicer 2>/dev/null || true
+sudo systemctl disable renicer 2>/dev/null || true
+sudo rm -f /usr/local/bin/renicer-daemon || true
+sudo rm -f /etc/systemd/system/renicer.service || true
+
 echo "🧪 [1/5] 테스트 실행 중..."
 go test ./...
 
