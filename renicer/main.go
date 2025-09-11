@@ -164,9 +164,7 @@ func applyCgroup(containerID string, period int, runtime int) error {
 		return err
 	}
 
-	if !cgroupV2 {
-		return fmt.Errorf("cgroup v2 required but not detected")
-	}
+	// cgroup v2 availability is verified above
 
 	// Preflight checks for cgroup v2 RT
 	// 1) cpu controller must be available at root and enabled in parent subtree
