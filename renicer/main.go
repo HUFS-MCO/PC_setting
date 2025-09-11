@@ -202,7 +202,7 @@ func applyCgroup(containerID string, period int, runtime int) error {
 	}
 
 	// 3) parent cgroup RT limits: child cannot exceed ancestor limits in v2
-	parentRTPeriod, parentRTRuntime, parentPath, err := getParentRTLimits(filepath.Join("/sys/fs/cgroup", cgRelPath))
+	parentRTPeriod, parentRTRuntime, parentPath, err := getParentRTLimits(containerCgPath)
 	if err == nil { // if found, normalize against parent
 		// Use parent's period to avoid EINVAL due to mismatch
 		if parentRTPeriod > 0 {
