@@ -200,35 +200,14 @@ func applyCgroup(containerID string, period int, runtime int) error {
 	}
 
 	// 3) parent cgroup RT limits: child cannot exceed ancestor limits in v2
-	parentRTPeriod, parentRTRuntime, parentPath, err := getParentRTLimits(containerCgPath)
-	if err == nil { // if found, normalize against parent
-		// Use parent's period to avoid EINVAL due to mismatch
-		if parentRTPeriod > 0 {
-			period = parentRTPeriod
-		}
-		// Cap runtime to parent's runtime if parent enforces it (>0). 0 means no RT allowed
-		if parentRTRuntime == 0 && runtime > 0 {
-			return fmt.Errorf("parent cgroup (%s) disallows RT runtime (0)", parentPath)
-		}
-		if runtime > 0 && parentRTRuntime > 0 && runtime > parentRTRuntime {
-			runtime = parentRTRuntime
-		}
+	// First, proactively apply RT settings to the pod cgroup so the container can inherit
+	if err := writeRtValues(podCgPath, period, runtime); err != nil {
+		return fmt.Errorf("failed to update pod cgroup RT: %w", err)
 	}
 
-	// cgroup v2: write RT knobs to both container and pod cgroups
-	for _, cgPath := range []string{containerCgPath, podCgPath} {
-		cpuRTPeriodPath := filepath.Join(cgPath, "cpu.rt_period_us")
-		cpuRTRuntimePath := filepath.Join(cgPath, "cpu.rt_runtime_us")
-		if err := os.WriteFile(cpuRTPeriodPath, []byte(fmt.Sprintf("%d", period)), 0o644); err != nil {
-			return fmt.Errorf("failed writing %s: %w", cpuRTPeriodPath, err)
-		}
-		writeRuntime := runtime
-		if writeRuntime < 0 {
-			writeRuntime = 0
-		}
-		if err := os.WriteFile(cpuRTRuntimePath, []byte(fmt.Sprintf("%d", writeRuntime)), 0o644); err != nil {
-			return fmt.Errorf("failed writing %s: %w", cpuRTRuntimePath, err)
-		}
+	// Then apply to the container cgroup
+	if err := writeRtValues(containerCgPath, period, runtime); err != nil {
+		return fmt.Errorf("failed to update container cgroup RT: %w", err)
 	}
 	return nil
 }
@@ -293,6 +272,21 @@ func tokenContains(s string, want string) bool {
 	return false
 }
 
+func writeRtValues(cgPath string, period int, runtime int) error {
+	cpuRTPeriodPath := filepath.Join(cgPath, "cpu.rt_period_us")
+	cpuRTRuntimePath := filepath.Join(cgPath, "cpu.rt_runtime_us")
+	if err := os.WriteFile(cpuRTPeriodPath, []byte(fmt.Sprintf("%d", period)), 0o644); err != nil {
+		return fmt.Errorf("failed writing %s: %w", cpuRTPeriodPath, err)
+	}
+	writeRuntime := runtime
+	if writeRuntime < 0 {
+		writeRuntime = 0
+	}
+	if err := os.WriteFile(cpuRTRuntimePath, []byte(fmt.Sprintf("%d", writeRuntime)), 0o644); err != nil {
+		return fmt.Errorf("failed writing %s: %w", cpuRTRuntimePath, err)
+	}
+	return nil
+}
 // getCgroupPathsFromInspect builds absolute cgroup v2 paths for container and its pod from crictl inspect
 func getCgroupPathsFromInspect(containerID string) (string, string, error) {
 	inspectCmd := exec.Command("crictl", "inspect", containerID)
