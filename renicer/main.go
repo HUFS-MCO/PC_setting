@@ -173,13 +173,13 @@ func applyCgroup(containerID string, period int, runtime int) error {
 		return fmt.Errorf("read cgroup.controllers: %w", err)
 	}
 	if !tokenContains(string(rootControllers), "cpu") {
-		return fmt.Errorf("cpu controller not available in cgroup v2 (cgroup.controllers)" )
+		return fmt.Errorf("cpu controller not available in cgroup v2 (cgroup.controllers)")
 	}
 	parentDir := filepath.Dir(containerCgPath)
 	subtreeCtl, err := os.ReadFile(filepath.Join(parentDir, "cgroup.subtree_control"))
 	if err == nil { // some leaves may not have this; ignore if missing
 		if !tokenContains(string(subtreeCtl), "+cpu") && !tokenContains(string(subtreeCtl), "cpu") {
-			return fmt.Errorf("cpu controller not enabled in parent cgroup (cgroup.subtree_control)" )
+			return fmt.Errorf("cpu controller not enabled in parent cgroup (cgroup.subtree_control)")
 		}
 	}
 
@@ -200,14 +200,32 @@ func applyCgroup(containerID string, period int, runtime int) error {
 	}
 
 	// 3) parent cgroup RT limits: child cannot exceed ancestor limits in v2
-	// First, proactively apply RT settings to the pod cgroup so the container can inherit
-	if err := writeRtValues(podCgPath, period, runtime); err != nil {
-		return fmt.Errorf("failed to update pod cgroup RT: %w", err)
+	// Decide write order based on whether we're decreasing (tightening) or increasing (loosening) limits.
+	// - Increasing: write pod (parent) first, then container (child)
+	// - Decreasing: write container (child) first, then pod (parent)
+	podCurPeriod, podCurRuntime, err := readRtValues(podCgPath)
+	if err != nil {
+		return fmt.Errorf("failed to read current pod RT values: %w", err)
 	}
 
-	// Then apply to the container cgroup
-	if err := writeRtValues(containerCgPath, period, runtime); err != nil {
-		return fmt.Errorf("failed to update container cgroup RT: %w", err)
+	decreasing := isDecrease(podCurPeriod, period) || isRuntimeDecrease(podCurRuntime, runtime)
+
+	if decreasing {
+		// Child first, then parent
+		if err := writeRtValues(containerCgPath, period, runtime); err != nil {
+			return fmt.Errorf("failed to update container cgroup RT: %w", err)
+		}
+		if err := writeRtValues(podCgPath, period, runtime); err != nil {
+			return fmt.Errorf("failed to update pod cgroup RT: %w", err)
+		}
+	} else {
+		// Parent first, then child
+		if err := writeRtValues(podCgPath, period, runtime); err != nil {
+			return fmt.Errorf("failed to update pod cgroup RT: %w", err)
+		}
+		if err := writeRtValues(containerCgPath, period, runtime); err != nil {
+			return fmt.Errorf("failed to update container cgroup RT: %w", err)
+		}
 	}
 	return nil
 }
@@ -287,6 +305,44 @@ func writeRtValues(cgPath string, period int, runtime int) error {
 	}
 	return nil
 }
+
+// readRtValues reads current cpu.rt_period_us and cpu.rt_runtime_us under the given cgroup path
+func readRtValues(cgPath string) (int, int, error) {
+	periodPath := filepath.Join(cgPath, "cpu.rt_period_us")
+	runtimePath := filepath.Join(cgPath, "cpu.rt_runtime_us")
+	curPeriod, err := readIntFromFile(periodPath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("read %s: %w", periodPath, err)
+	}
+	curRuntime, err := readIntFromFile(runtimePath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("read %s: %w", runtimePath, err)
+	}
+	return curPeriod, curRuntime, nil
+}
+
+// isDecrease returns true if newVal is strictly less than oldVal
+func isDecrease(oldVal int, newVal int) bool {
+	return newVal < oldVal
+}
+
+// isRuntimeDecrease handles special semantics where negative means unlimited (loosest).
+// Decrease cases:
+// - old < 0 and new >= 0 (from unlimited to limited)
+// - both non-negative and new < old
+// Increase cases:
+// - new < 0 (to unlimited)
+// - both non-negative and new >= old
+func isRuntimeDecrease(oldRuntime int, newRuntime int) bool {
+	if newRuntime < 0 {
+		return false
+	}
+	if oldRuntime < 0 && newRuntime >= 0 {
+		return true
+	}
+	return newRuntime < oldRuntime
+}
+
 // getCgroupPathsFromInspect builds absolute cgroup v2 paths for container and its pod from crictl inspect
 func getCgroupPathsFromInspect(containerID string) (string, string, error) {
 	inspectCmd := exec.Command("crictl", "inspect", containerID)
@@ -310,16 +366,16 @@ func getCgroupPathsFromInspect(containerID string) (string, string, error) {
 	if len(parts) != 3 {
 		return "", "", fmt.Errorf("unexpected cgroupsPath format: %s", cgroupsPath)
 	}
-	sliceGroup := parts[0]                             // e.g. kubepods-besteffort-podXXXX.slice
-	runtimeName := parts[1]                            // e.g. cri-containerd
-	scopeID := parts[2]                                // e.g. <container-id>
+	sliceGroup := parts[0]  // e.g. kubepods-besteffort-podXXXX.slice
+	runtimeName := parts[1] // e.g. cri-containerd
+	scopeID := parts[2]     // e.g. <container-id>
 	// Derive QoS slice (segment before -pod) and pod slice
 	idx := strings.LastIndex(sliceGroup, "-pod")
 	if idx <= 0 {
 		return "", "", fmt.Errorf("cannot locate pod segment in slice: %s", sliceGroup)
 	}
-	qosSlice := sliceGroup[:idx] + ".slice"           // e.g. kubepods-besteffort.slice
-	podSlice := sliceGroup                              // full pod slice name (already ends with .slice)
+	qosSlice := sliceGroup[:idx] + ".slice" // e.g. kubepods-besteffort.slice
+	podSlice := sliceGroup                  // full pod slice name (already ends with .slice)
 	// Build absolute pod path under unified hierarchy
 	podPath := filepath.Join("/sys/fs/cgroup", "kubepods.slice", qosSlice, podSlice)
 	containerScope := runtimeName + "-" + scopeID + ".scope"
