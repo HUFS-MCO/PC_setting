@@ -2,28 +2,28 @@
 
 set -e
 
-echo "🧹 [0/5] 기존 renicer-daemon 정리 중..."
-sudo systemctl stop renicer 2>/dev/null || true
-sudo systemctl disable renicer 2>/dev/null || true
-sudo rm -f /usr/local/bin/renicer-daemon || true
-sudo rm -f /etc/systemd/system/renicer.service || true
+echo "🧹 [0/5] 기존 resource-daemon 정리 중..."
+sudo systemctl stop resource 2>/dev/null || true
+sudo systemctl disable resource 2>/dev/null || true
+sudo rm -f /usr/local/bin/resource-daemon || true
+sudo rm -f /etc/systemd/system/resource.service || true
 
 echo "🧪 [1/5] 테스트 실행 중..."
 go test ./...
 
-echo "📦 [2/5] renicer-daemon 빌드 및 설치 중..."
-go build -o renicer-daemon main.go
-sudo cp renicer-daemon /usr/local/bin/
-sudo chmod +x /usr/local/bin/renicer-daemon
+echo "📦 [2/5] resource-daemon 빌드 및 설치 중..."
+go build -o resource-daemon main.go
+sudo cp resource-daemon /usr/local/bin/
+sudo chmod +x /usr/local/bin/resource-daemon
 
 echo "🛠 [3/5] systemd 서비스 파일 구성..."
-cat <<EOF | sudo tee /etc/systemd/system/renicer.service > /dev/null
+cat <<EOF | sudo tee /etc/systemd/system/resource.service > /dev/null
 [Unit]
 Description=Renicer Daemon for Container Nice Adjustment
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/renicer-daemon
+ExecStart=/usr/local/bin/resource-daemon
 Restart=always
 RestartSec=2
 User=root
@@ -50,8 +50,8 @@ fi
 echo "🚀 [5/5] systemd 서비스 시작..."
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
-sudo systemctl enable renicer
-sudo systemctl restart renicer
-sudo systemctl status renicer --no-pager
+sudo systemctl enable resource
+sudo systemctl restart resource
+sudo systemctl status resource --no-pager
 
-echo "✅ renicer 설치 및 실행 완료!"
+echo "✅ resource-daemon 설치 및 실행 완료!"
