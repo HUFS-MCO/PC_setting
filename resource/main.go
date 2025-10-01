@@ -83,20 +83,21 @@ func handleRenice(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	socketPath := "/var/run/renicer.sock"
-	//_ = exec.Command("rm", "-f", socketPath).Run()
-
 	listener, err := net.Listen("tcp", "0.0.0.0:8080")
 	if err != nil {
 		log.Fatalf("Failed to listen on socket: %v", err)
 	}
 	defer listener.Close()
 
-	log.Println("Renicer daemon listening on", socketPath)
+	log.Printf("Renicer daemon listening on port %d", 8080)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/renice", handleRenice)
 	mux.HandleFunc("/cgroup", handleCgroup)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
 
 	if err := http.Serve(listener, mux); err != nil {
 		log.Fatalf("HTTP server error: %v", err)
