@@ -2,21 +2,18 @@
 
 set -e
 
-echo "🧹 [0/5] 기존 resource-daemon 정리 중..."
+echo "🧹 [0/4] 기존 resource-daemon 정리 중..."
 sudo systemctl stop resource 2>/dev/null || true
 sudo systemctl disable resource 2>/dev/null || true
 sudo rm -f /usr/local/bin/resource-daemon || true
 sudo rm -f /etc/systemd/system/resource.service || true
 
-echo "🧪 [1/5] 테스트 실행 중..."
-go test ./...
-
-echo "📦 [2/5] resource-daemon 빌드 및 설치 중..."
+echo "📦 [1/4] resource-daemon 빌드 및 설치 중..."
 go build -o resource-daemon main.go
 sudo cp resource-daemon /usr/local/bin/
 sudo chmod +x /usr/local/bin/resource-daemon
 
-echo "🛠 [3/5] systemd 서비스 파일 구성..."
+echo "🛠 [2/4] systemd 서비스 파일 구성..."
 cat <<EOF | sudo tee /etc/systemd/system/resource.service > /dev/null
 [Unit]
 Description=Renicer Daemon for Container Nice Adjustment
@@ -37,7 +34,7 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 EOF
 
-echo "🔧 [4/5] 필수 도구 확인 중..."
+echo "🔧 [3/4] 필수 도구 확인 중..."
 
 # jq 설치
 if ! command -v jq &> /dev/null; then
@@ -47,7 +44,7 @@ else
   echo "✅ jq 이미 설치됨"
 fi
 
-echo "🚀 [5/5] systemd 서비스 시작..."
+echo "🚀 [4/4] systemd 서비스 시작..."
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 sudo systemctl enable resource

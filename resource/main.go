@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"path/filepath"
 	"strings"
 )
@@ -22,6 +23,7 @@ type CgroupRequest struct {
 	ContainerID string `json:"container_id"`
 	Period      int    `json:"period"`
 	Runtime     int    `json:"runtime"`
+	Core        *int   `json:"core,omitempty"`
 }
 
 func handleRenice(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +141,15 @@ func handleCgroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := applyCgroupFunc(req.ContainerID, req.Period, req.Runtime); err != nil {
+	// Validate core value if provided
+	if req.Core != nil {
+		if *req.Core < 0 {
+			http.Error(w, "core must be >= 0", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if err := applyCgroupFunc(req.ContainerID, req.Period, req.Runtime, req.Core); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to update cgroup: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -148,7 +158,7 @@ func handleCgroup(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Cgroup RT settings applied successfully"))
 }
 
-func applyCgroup(containerID string, period int, runtime int) error {
+func applyCgroup(containerID string, period int, runtime int, core *int) error {
 	if strings.HasPrefix(containerID, "containerd://") {
 		containerID = strings.TrimPrefix(containerID, "containerd://")
 	}
@@ -161,7 +171,7 @@ func applyCgroup(containerID string, period int, runtime int) error {
 	// Resolve cgroup absolute paths (container and pod) from crictl inspect
 	containerCgPath, podCgPath, err := getCgroupPathsFromInspect(containerID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get cgroup paths: %w", err)
 	}
 
 	// cgroup v2 availability is verified above
@@ -199,31 +209,43 @@ func applyCgroup(containerID string, period int, runtime int) error {
 		return fmt.Errorf("invalid period (input=%d, system=%d)", period, globalRTPeriod)
 	}
 
+	// Check parent RT limits first
+	rootPath := "/sys/fs/cgroup/kubepods.slice"
+	rootPeriod, err := readIntFromFile(filepath.Join(rootPath, "cpu.rt_period_us"))
+	if err != nil {
+		return fmt.Errorf("failed to read root RT period: %w", err)
+	}
+	
+	if rootPeriod != 0 && period > rootPeriod {
+		return fmt.Errorf("requested period %d exceeds root limit %d", period, rootPeriod)
+	}
+
 	// 3) parent cgroup RT limits: child cannot exceed ancestor limits in v2
-	// Decide write order based on whether we're decreasing (tightening) or increasing (loosening) limits.
-	// - Increasing: write pod (parent) first, then container (child)
-	// - Decreasing: write container (child) first, then pod (parent)
-	podCurPeriod, podCurRuntime, err := readRtValues(podCgPath)
+	podPeriod, podRuntime, err := readRtValues(podCgPath)
 	if err != nil {
 		return fmt.Errorf("failed to read current pod RT values: %w", err)
 	}
 
-	decreasing := isDecrease(podCurPeriod, period) || isRuntimeDecrease(podCurRuntime, runtime)
+	// Check if we're decreasing runtime or period
+	runtimeDecreasing := isRuntimeDecrease(podRuntime, runtime)
+	periodDecreasing := isDecrease(podPeriod, period)
 
-	if decreasing {
-		// Child first, then parent
-		if err := writeRtValues(containerCgPath, period, runtime); err != nil {
+	if runtimeDecreasing || periodDecreasing {
+		// Decreasing: write container (child) first, then pod (parent)
+		log.Printf("Decreasing limits: container first (runtime: %v, period: %v)", runtimeDecreasing, periodDecreasing)
+		if err := writeRtValues(containerCgPath, period, runtime, core); err != nil {
 			return fmt.Errorf("failed to update container cgroup RT: %w", err)
 		}
-		if err := writeRtValues(podCgPath, period, runtime); err != nil {
+		if err := writeRtValues(podCgPath, period, runtime, core); err != nil {
 			return fmt.Errorf("failed to update pod cgroup RT: %w", err)
 		}
 	} else {
-		// Parent first, then child
-		if err := writeRtValues(podCgPath, period, runtime); err != nil {
+		// Increasing: write pod (parent) first, then container (child)
+		log.Printf("Increasing limits: pod first (runtime: %v, period: %v)", !runtimeDecreasing, !periodDecreasing)
+		if err := writeRtValues(podCgPath, period, runtime, core); err != nil {
 			return fmt.Errorf("failed to update pod cgroup RT: %w", err)
 		}
-		if err := writeRtValues(containerCgPath, period, runtime); err != nil {
+		if err := writeRtValues(containerCgPath, period, runtime, core); err != nil {
 			return fmt.Errorf("failed to update container cgroup RT: %w", err)
 		}
 	}
@@ -290,18 +312,84 @@ func tokenContains(s string, want string) bool {
 	return false
 }
 
-func writeRtValues(cgPath string, period int, runtime int) error {
-	cpuRTPeriodPath := filepath.Join(cgPath, "cpu.rt_period_us")
-	cpuRTRuntimePath := filepath.Join(cgPath, "cpu.rt_runtime_us")
-	if err := os.WriteFile(cpuRTPeriodPath, []byte(fmt.Sprintf("%d", period)), 0o644); err != nil {
-		return fmt.Errorf("failed writing %s: %w", cpuRTPeriodPath, err)
+func writeRtValues(cgPath string, period int, runtime int, core *int) error {
+	// Get current values
+	curPeriod, curRuntime, err := readRtValues(cgPath)
+	if err != nil {
+		return fmt.Errorf("failed to read current RT values: %w", err)
 	}
+
+	// Determine write order based on whether we're increasing or decreasing values
+	periodDecreasing := isDecrease(curPeriod, period)
+	runtimeDecreasing := isRuntimeDecrease(curRuntime, runtime)
+
 	writeRuntime := runtime
 	if writeRuntime < 0 {
 		writeRuntime = 0
 	}
-	if err := os.WriteFile(cpuRTRuntimePath, []byte(fmt.Sprintf("%d", writeRuntime)), 0o644); err != nil {
-		return fmt.Errorf("failed writing %s: %w", cpuRTRuntimePath, err)
+
+	// Get current multi-runtime value for the specific core if it exists
+	var curMultiRuntime int
+	if core != nil {
+		cpuRTMultiRuntimePath := filepath.Join(cgPath, "cpu.rt_multi_runtime_us")
+		if data, err := os.ReadFile(cpuRTMultiRuntimePath); err == nil {
+			fields := strings.Fields(string(data))
+			if len(fields) >= 2 {
+				for i := 0; i < len(fields); i += 2 {
+					if coreNum, err := strconv.Atoi(fields[i]); err == nil && coreNum == *core {
+						if runtime, err := strconv.Atoi(fields[i+1]); err == nil {
+							curMultiRuntime = runtime
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Check if multi-runtime is decreasing
+	multiRuntimeDecreasing := core != nil && isRuntimeDecrease(curMultiRuntime, runtime)
+
+	if periodDecreasing || runtimeDecreasing || multiRuntimeDecreasing {
+		// When decreasing, set runtime first, then period
+		if core != nil {
+			// Use multi-runtime format for both pod and container
+			cpuRTMultiRuntimePath := filepath.Join(cgPath, "cpu.rt_multi_runtime_us")
+			multiRuntimeValue := fmt.Sprintf("%d %d", *core, writeRuntime)
+			if err := os.WriteFile(cpuRTMultiRuntimePath, []byte(multiRuntimeValue), 0o644); err != nil {
+				return fmt.Errorf("failed writing %s: %w", cpuRTMultiRuntimePath, err)
+			}
+		} else {
+			cpuRTRuntimePath := filepath.Join(cgPath, "cpu.rt_runtime_us")
+			if err := os.WriteFile(cpuRTRuntimePath, []byte(fmt.Sprintf("%d", writeRuntime)), 0o644); err != nil {
+				return fmt.Errorf("failed writing %s: %w", cpuRTRuntimePath, err)
+			}
+		}
+
+		cpuRTPeriodPath := filepath.Join(cgPath, "cpu.rt_period_us")
+		if err := os.WriteFile(cpuRTPeriodPath, []byte(fmt.Sprintf("%d", period)), 0o644); err != nil {
+			return fmt.Errorf("failed writing %s: %w", cpuRTPeriodPath, err)
+		}
+	} else {
+		// When increasing, set period first, then runtime
+		cpuRTPeriodPath := filepath.Join(cgPath, "cpu.rt_period_us")
+		if err := os.WriteFile(cpuRTPeriodPath, []byte(fmt.Sprintf("%d", period)), 0o644); err != nil {
+			return fmt.Errorf("failed writing %s: %w", cpuRTPeriodPath, err)
+		}
+
+		if core != nil {
+			// Use multi-runtime format for both pod and container
+			cpuRTMultiRuntimePath := filepath.Join(cgPath, "cpu.rt_multi_runtime_us")
+			multiRuntimeValue := fmt.Sprintf("%d %d", *core, writeRuntime)
+			if err := os.WriteFile(cpuRTMultiRuntimePath, []byte(multiRuntimeValue), 0o644); err != nil {
+				return fmt.Errorf("failed writing %s: %w", cpuRTMultiRuntimePath, err)
+			}
+		} else {
+			cpuRTRuntimePath := filepath.Join(cgPath, "cpu.rt_runtime_us")
+			if err := os.WriteFile(cpuRTRuntimePath, []byte(fmt.Sprintf("%d", writeRuntime)), 0o644); err != nil {
+				return fmt.Errorf("failed writing %s: %w", cpuRTRuntimePath, err)
+			}
+		}
 	}
 	return nil
 }
