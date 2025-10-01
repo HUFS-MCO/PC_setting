@@ -220,14 +220,36 @@ func applyCgroup(containerID string, period int, runtime int, core *string) erro
 		return fmt.Errorf("failed to read current pod RT values: %w", err)
 	}
 
-	// Check if we're decreasing runtime or period
+	// Check current multi-runtime value for the specific core range if it exists
+	var podMultiRuntime int
+	if core != nil {
+		cpuRTMultiRuntimePath := filepath.Join(podCgPath, "cpu.rt_multi_runtime_us")
+		if data, err := os.ReadFile(cpuRTMultiRuntimePath); err == nil {
+			content := string(data)
+			if strings.Contains(content, *core) {
+				fields := strings.Fields(content)
+				for i := 0; i < len(fields); i += 2 {
+					if i+1 < len(fields) && fields[i] == *core {
+						if rt, err := strconv.Atoi(fields[i+1]); err == nil {
+							podMultiRuntime = rt
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Check if we're decreasing runtime, period, or core-specific runtime
 	runtimeDecreasing := isRuntimeDecrease(podRuntime, runtime)
 	periodDecreasing := isDecrease(podPeriod, period)
+	multiRuntimeDecreasing := core != nil && isRuntimeDecrease(podMultiRuntime, runtime)
 
-	if runtimeDecreasing || periodDecreasing {
+	if runtimeDecreasing || periodDecreasing || multiRuntimeDecreasing {
 		// For decrease operations, write container (child) first, then pod (parent)
 		// This ensures child's limits are lowered before parent's
-		log.Printf("Decreasing limits: container first (runtime: %v, period: %v)", runtimeDecreasing, periodDecreasing)
+		log.Printf("Decreasing limits: container first (runtime: %v, period: %v, core: %v)",
+			runtimeDecreasing, periodDecreasing, multiRuntimeDecreasing)
 		if err := writeRtValues(containerCgPath, period, runtime, core); err != nil {
 			return fmt.Errorf("failed to update container cgroup RT: %w", err)
 		}
@@ -237,7 +259,8 @@ func applyCgroup(containerID string, period int, runtime int, core *string) erro
 	} else {
 		// When increasing, write pod (parent) first, then container (child)
 		// This ensures parent's limits are raised before child's
-		log.Printf("Increasing limits: pod first (runtime: %v, period: %v)", !runtimeDecreasing, !periodDecreasing)
+		log.Printf("Increasing limits: pod first (runtime: %v, period: %v, core: %v)",
+			!runtimeDecreasing, !periodDecreasing, !multiRuntimeDecreasing)
 		if err := writeRtValues(podCgPath, period, runtime, core); err != nil {
 			return fmt.Errorf("failed to update pod cgroup RT: %w", err)
 		}
@@ -353,23 +376,7 @@ func writeRtValues(cgPath string, period int, runtime int, core *string) error {
 		if core != nil {
 			// Use multi-runtime format for both pod and container
 			cpuRTMultiRuntimePath := filepath.Join(cgPath, "cpu.rt_multi_runtime_us")
-			// Read existing values first
-			var existingValues []string
-			if data, err := os.ReadFile(cpuRTMultiRuntimePath); err == nil {
-				existingFields := strings.Fields(string(data))
-				for i := 0; i < len(existingFields); i += 2 {
-					if i+1 >= len(existingFields) {
-						break
-					}
-					if existingFields[i] != *core {
-						// Keep other core ranges' settings
-						existingValues = append(existingValues, existingFields[i], existingFields[i+1])
-					}
-				}
-			}
-			// Add or update the new core range setting
-			existingValues = append(existingValues, *core, fmt.Sprintf("%d", writeRuntime))
-			multiRuntimeValue := strings.Join(existingValues, " ")
+			multiRuntimeValue := fmt.Sprintf("%s %d", *core, writeRuntime)
 
 			if err := os.WriteFile(cpuRTMultiRuntimePath, []byte(multiRuntimeValue), 0o644); err != nil {
 				return fmt.Errorf("failed writing %s: %w", cpuRTMultiRuntimePath, err)
@@ -395,7 +402,7 @@ func writeRtValues(cgPath string, period int, runtime int, core *string) error {
 		if core != nil {
 			// Use multi-runtime format for both pod and container
 			cpuRTMultiRuntimePath := filepath.Join(cgPath, "cpu.rt_multi_runtime_us")
-			multiRuntimeValue := fmt.Sprintf("%d %d", *core, writeRuntime)
+			multiRuntimeValue := fmt.Sprintf("%s %d", *core, writeRuntime)
 			if err := os.WriteFile(cpuRTMultiRuntimePath, []byte(multiRuntimeValue), 0o644); err != nil {
 				return fmt.Errorf("failed writing %s: %w", cpuRTMultiRuntimePath, err)
 			}
