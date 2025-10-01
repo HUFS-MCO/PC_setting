@@ -23,7 +23,7 @@ type CgroupRequest struct {
 	ContainerID string `json:"container_id"`
 	Period      int    `json:"period"`
 	Runtime     int    `json:"runtime"`
-	Core        *int   `json:"core,omitempty"`
+	Core        *string   `json:"core,omitempty"`
 }
 
 func handleRenice(w http.ResponseWriter, r *http.Request) {
@@ -141,13 +141,7 @@ func handleCgroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate core value if provided
-	if req.Core != nil {
-		if *req.Core < 0 {
-			http.Error(w, "core must be >= 0", http.StatusBadRequest)
-			return
-		}
-	}
+	// Core value is now handled as a string range, no validation needed here
 
 	if err := applyCgroupFunc(req.ContainerID, req.Period, req.Runtime, req.Core); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to update cgroup: %v", err), http.StatusInternalServerError)
@@ -158,7 +152,7 @@ func handleCgroup(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Cgroup RT settings applied successfully"))
 }
 
-func applyCgroup(containerID string, period int, runtime int, core *int) error {
+func applyCgroup(containerID string, period int, runtime int, core *string) error {
 	if strings.HasPrefix(containerID, "containerd://") {
 		containerID = strings.TrimPrefix(containerID, "containerd://")
 	}
@@ -231,7 +225,8 @@ func applyCgroup(containerID string, period int, runtime int, core *int) error {
 	periodDecreasing := isDecrease(podPeriod, period)
 
 	if runtimeDecreasing || periodDecreasing {
-		// Decreasing: write container (child) first, then pod (parent)
+		// For decrease operations, write container (child) first, then pod (parent)
+		// This ensures child's limits are lowered before parent's
 		log.Printf("Decreasing limits: container first (runtime: %v, period: %v)", runtimeDecreasing, periodDecreasing)
 		if err := writeRtValues(containerCgPath, period, runtime, core); err != nil {
 			return fmt.Errorf("failed to update container cgroup RT: %w", err)
@@ -240,7 +235,8 @@ func applyCgroup(containerID string, period int, runtime int, core *int) error {
 			return fmt.Errorf("failed to update pod cgroup RT: %w", err)
 		}
 	} else {
-		// Increasing: write pod (parent) first, then container (child)
+		// When increasing, write pod (parent) first, then container (child)
+		// This ensures parent's limits are raised before child's
 		log.Printf("Increasing limits: pod first (runtime: %v, period: %v)", !runtimeDecreasing, !periodDecreasing)
 		if err := writeRtValues(podCgPath, period, runtime, core); err != nil {
 			return fmt.Errorf("failed to update pod cgroup RT: %w", err)
@@ -312,7 +308,7 @@ func tokenContains(s string, want string) bool {
 	return false
 }
 
-func writeRtValues(cgPath string, period int, runtime int, core *int) error {
+func writeRtValues(cgPath string, period int, runtime int, core *string) error {
 	// Get current values
 	curPeriod, curRuntime, err := readRtValues(cgPath)
 	if err != nil {
@@ -328,15 +324,17 @@ func writeRtValues(cgPath string, period int, runtime int, core *int) error {
 		writeRuntime = 0
 	}
 
-	// Get current multi-runtime value for the specific core if it exists
+	// Get current multi-runtime value for the specific core range if it exists
 	var curMultiRuntime int
 	if core != nil {
 		cpuRTMultiRuntimePath := filepath.Join(cgPath, "cpu.rt_multi_runtime_us")
 		if data, err := os.ReadFile(cpuRTMultiRuntimePath); err == nil {
-			fields := strings.Fields(string(data))
-			if len(fields) >= 2 {
+			content := string(data)
+			if strings.Contains(content, *core) {
+				fields := strings.Fields(content)
+				// Look for the core range in the existing configuration
 				for i := 0; i < len(fields); i += 2 {
-					if coreNum, err := strconv.Atoi(fields[i]); err == nil && coreNum == *core {
+					if i+1 < len(fields) && fields[i] == *core {
 						if runtime, err := strconv.Atoi(fields[i+1]); err == nil {
 							curMultiRuntime = runtime
 							break
@@ -355,7 +353,24 @@ func writeRtValues(cgPath string, period int, runtime int, core *int) error {
 		if core != nil {
 			// Use multi-runtime format for both pod and container
 			cpuRTMultiRuntimePath := filepath.Join(cgPath, "cpu.rt_multi_runtime_us")
-			multiRuntimeValue := fmt.Sprintf("%d %d", *core, writeRuntime)
+			// Read existing values first
+			var existingValues []string
+			if data, err := os.ReadFile(cpuRTMultiRuntimePath); err == nil {
+				existingFields := strings.Fields(string(data))
+				for i := 0; i < len(existingFields); i += 2 {
+					if i+1 >= len(existingFields) {
+						break
+					}
+					if existingFields[i] != *core {
+						// Keep other core ranges' settings
+						existingValues = append(existingValues, existingFields[i], existingFields[i+1])
+					}
+				}
+			}
+			// Add or update the new core range setting
+			existingValues = append(existingValues, *core, fmt.Sprintf("%d", writeRuntime))
+			multiRuntimeValue := strings.Join(existingValues, " ")
+
 			if err := os.WriteFile(cpuRTMultiRuntimePath, []byte(multiRuntimeValue), 0o644); err != nil {
 				return fmt.Errorf("failed writing %s: %w", cpuRTMultiRuntimePath, err)
 			}
