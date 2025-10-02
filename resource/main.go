@@ -150,7 +150,7 @@ func handleCgroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Cgroup RT settings applied successfully"))
+	w.Write([]byte("Cgroup RT settings and CPU set applied successfully"))
 }
 
 func applyCgroup(containerID string, period int, runtime int, core *string) error {
@@ -414,6 +414,29 @@ func writeRtValues(cgPath string, period int, runtime int, core *string) error {
 			}
 		}
 	}
+
+	// Apply CPU set if core is specified
+	if core != nil {
+		cpuSetPath := filepath.Join(cgPath, "cpuset.cpus")
+		
+		// Read current cpuset value to check if change is needed
+		currentCpuSet, err := os.ReadFile(cpuSetPath)
+		if err != nil {
+			return fmt.Errorf("failed to read current cpuset: %w", err)
+		}
+		
+		currentValue := strings.TrimSpace(string(currentCpuSet))
+		if currentValue != *core {
+			log.Printf("Updating CPU set for %s: %s -> %s", cgPath, currentValue, *core)
+			
+			if err := os.WriteFile(cpuSetPath, []byte(*core), 0o644); err != nil {
+				return fmt.Errorf("failed to write cpuset.cpus: %w", err)
+			}
+		} else {
+			log.Printf("CPU set already matches for %s: %s", cgPath, *core)
+		}
+	}
+
 	return nil
 }
 
