@@ -20,7 +20,6 @@ struct event {
     __u32 cpu;
     __u32 pad;
     __s64 runtime_ns;
-    __u32 flags;
     __u32 _pad;
     __u64 tg_ptr;
     __u64 curr_cgid;
@@ -30,13 +29,11 @@ static int handle_event(void *ctx, void *data, size_t len)
 {
     (void)ctx; (void)len;
     const struct event *e = data;
-    printf("[ts=%llu] cpu=%u tg=0x%llx cgid=%llu runtime=%lld flags=0x%x\n",
-           (unsigned long long)e->ts,
+    printf("[ts=%llu ms] cpu=%u cgid=%llu runtime=%lld us\n",
+           (unsigned long long)e->ts / 1000000,
            e->cpu,
-           (unsigned long long)e->tg_ptr,
            (unsigned long long)e->curr_cgid,
-           (long long)e->runtime_ns,
-           e->flags);
+           (long long)e->runtime_ns / 1000);
     return 0;
 }
 
