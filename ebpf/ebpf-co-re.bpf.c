@@ -16,7 +16,6 @@ struct event {
     __u32 cpu;
     __u32 pad;
     __s64 runtime_ns;  // dl_se->runtime
-    __u32 flags;
     __u32 _pad;
     __u64 tg_ptr;
     __u64 cgid;
@@ -43,20 +42,6 @@ struct {
     __type(value, struct last_state);
 } se_state SEC(".maps");
 
-// ========== Helper: rt_runtime_us 확인 ==========
-static __always_inline bool has_valid_runtime(struct task_group *tg)
-{
-    if (!tg)
-        return false;
-
-    // task_group → rt_bandwidth → rt_runtime (µs)
-    s64 rt_runtime_us = 0;
-    bpf_core_read(&rt_runtime_us, sizeof(rt_runtime_us),
-                  &tg->dl_bandwidth.dl_runtime);
-
-    // 0 이하인 경우 runtime 없는 그룹
-    return rt_runtime_us > 0;
-}
 
 // ========== Main Trace Hook ==========
 SEC("fentry/update_curr_dl_se")
@@ -76,10 +61,6 @@ int BPF_PROG(on_update_curr_dl_se, struct rq *rq, struct sched_dl_entity *dl_se,
     if (my_q)
         tg = BPF_CORE_READ(my_q, rt.tg);
     if (!tg)
-        return 0;
-
-    // 3️⃣ 유효한 runtime_us가 없으면(=0) 필터링
-    if (!has_valid_runtime(tg))
         return 0;
 
     // 4️⃣ 현재 런타임 읽기
@@ -104,7 +85,6 @@ int BPF_PROG(on_update_curr_dl_se, struct rq *rq, struct sched_dl_entity *dl_se,
             e->ts = bpf_ktime_get_ns();
             e->cpu = bpf_get_smp_processor_id();
             e->runtime_ns = runtime; //BPF_CORE_READ(dl_se, dl_runtime);
-            e->flags = BPF_CORE_READ(dl_se, flags);
             e->tg_ptr = (unsigned long)tg;
             e->cgid = bpf_get_current_cgroup_id();
             bpf_ringbuf_submit(e, 0);
