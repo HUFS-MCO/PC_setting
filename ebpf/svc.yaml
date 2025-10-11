@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mc-kube-controller
+  namespace: mc-kube-system
+spec:
+  type: NodePort
+  selector:
+    control-plane: controller-manager   # ✅ 파드 라벨과 동일
+  ports:
+    - name: overrun
+      port: 8090
+      targetPort: 8090
+      nodePort: 30090
+      protocol: TCP
