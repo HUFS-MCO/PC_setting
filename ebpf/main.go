@@ -262,7 +262,7 @@ func main() {
 	log.SetFlags(0)
 
 	obj := getenv("BPF_OBJECT", "./hcbs_overrun.bpf.o")
-	controllerURL := "http://192.168.1.10:30090/overrun" // os.Getenv("CONTROLLER_URL") // 비워두면 POST 생략
+	controllerURL := "http://localhost:30090/overrun" // os.Getenv("CONTROLLER_URL") // 비워두면 POST 생략
 
 	// 1) cgroup2 root & cache
 	root, err := findCgroup2Mountpoint()
