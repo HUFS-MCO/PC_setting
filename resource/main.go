@@ -89,7 +89,7 @@ func main() {
 	}
 	defer listener.Close()
 
-	log.Printf("Renicer daemon listening on port %d", 8080)
+	log.Printf("Resource Controller listening on port %d", 8080)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/renice", handleRenice)
