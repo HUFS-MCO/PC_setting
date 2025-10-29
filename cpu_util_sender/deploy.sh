@@ -16,6 +16,7 @@ fi
 # Docker 이미지 빌드
 echo "1. Docker 이미지 빌드 중..."
 docker build -t noru0817/cpu_util_sender:0.0.1 .
+docker push noru0817/cpu_util_sender:0.0.1
 
 if [ $? -eq 0 ]; then
     echo "✓ Docker 이미지 빌드 완료"

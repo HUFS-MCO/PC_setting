@@ -25,8 +25,9 @@ var k8sClient kubernetes.Interface
 
 // Annotation 키 (controller와 일치해야 함)
 const (
-	annUsageKey = "mckube.sdv.com/cpu-usage"
-	annDurKey   = "mckube.sdv.com/cpu-over90-duration-s"
+	annUsageKey   = "mckube.sdv.com/cpu-usage"
+	annDurKey     = "mckube.sdv.com/cpu-over90-duration-s"
+	annCpuBusyKey = "mckube.sdv.com/isCpuBusy"
 )
 
 func readProcStat() (cpuSample, error) {
@@ -122,15 +123,16 @@ func initKubernetesClient() error {
 	return nil
 }
 
-func updateNodeAnnotations(nodeName string, cpuUsage int, over90Duration int64) error {
+func updateNodeAnnotations(nodeName string, cpuUsage int, over90Duration int64, isCpuBusy bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	patchData := map[string]interface{}{
 		"metadata": map[string]interface{}{
 			"annotations": map[string]string{
-				annUsageKey: strconv.Itoa(cpuUsage),
-				annDurKey:   strconv.FormatInt(over90Duration, 10),
+				annUsageKey:   strconv.Itoa(cpuUsage),
+				annDurKey:     strconv.FormatInt(over90Duration, 10),
+				annCpuBusyKey: strconv.FormatBool(isCpuBusy),
 			},
 		},
 	}
@@ -202,24 +204,31 @@ func main() {
 
 			if !cpuWasBusy {
 				log.Printf("CPU usage exceeded 90%%: node=%s usage=%d%% over90time=%ds", node, u, over90time)
-			} else if u != lastSentUsage {
-				log.Printf("CPU high usage update: node=%s usage=%d%% over90time=%ds", node, u, over90time)
+			} else if u != lastSentUsage && over90time%5 == 0 {
+				log.Printf("CPU high usage continues: node=%s usage=%d%% over90time=%ds", node, u, over90time)
 			}
 		} else {
+			if cpuWasBusy {
+				log.Printf("CPU usage normalized: node=%s usage=%d%%", node, u)
+			}
 			over90time = 0
 		}
 
 		shouldSend := false
 
 		if isCpuBusy && !cpuWasBusy {
+			// CPU가 90% 이상으로 올라간 경우
 			shouldSend = true
 		} else if !isCpuBusy && cpuWasBusy {
 			log.Printf("CPU dropped below 90%%: node=%s usage=%d%%", node, u)
 			shouldSend = true
+		} else if isCpuBusy && over90time > 0 && over90time%5 == 0 {
+			// CPU가 계속 90% 이상이면서 5초마다 한 번씩만 업데이트
+			shouldSend = true
 		}
 
 		if shouldSend {
-			if err := updateNodeAnnotations(node, u, over90time); err != nil {
+			if err := updateNodeAnnotations(node, u, over90time, isCpuBusy); err != nil {
 				log.Printf("Failed to update node annotations: %v", err)
 			} else {
 				lastSentUsage = u
