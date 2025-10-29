@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: mckube-cpu-agent
+  namespace: default
+  labels:
+    app: mckube-cpu-agent
+spec:
+  selector:
+    matchLabels:
+      app: mckube-cpu-agent
+  template:
+    metadata:
+      labels:
+        app: mckube-cpu-agent
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/cpu-agent: unconfined
+    spec:
+      serviceAccountName: mckube-cpu-agent
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+      # Master node에도 배포되도록 toleration 추가
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: cpu-agent
+        image: noru0817/cpu_util_sender:0.0.4
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        securityContext:
+          privileged: false
+          runAsUser: 0
+          readOnlyRootFilesystem: false
+        volumeMounts:
+        - name: proc
+          mountPath: /proc
+          readOnly: true
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      restartPolicy: Always
