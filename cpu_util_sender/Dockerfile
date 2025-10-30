@@ -15,8 +15,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o cpu-agent .
 # Final stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates and kubectl
+RUN apk --no-cache add ca-certificates curl && \
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/bin/kubectl
 
 WORKDIR /root/
 

@@ -2,33 +2,26 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
-type cpuSample struct{ idle, total uint64 }
-
-var k8sClient kubernetes.Interface
-
-// Annotation 키 (controller와 일치해야 함)
 const (
 	annUsageKey   = "mckube.sdv.com/cpu-usage"
 	annDurKey     = "mckube.sdv.com/cpu-over90-duration-s"
 	annCpuBusyKey = "mckube.sdv.com/isCpuBusy"
 )
+
+type cpuSample struct{ idle, total uint64 }
 
 func readProcStat() (cpuSample, error) {
 	f, err := os.Open("/proc/stat")
@@ -102,75 +95,49 @@ func getNodeName() string {
 	if v := strings.TrimSpace(os.Getenv("NODE_NAME")); v != "" {
 		return strings.ToLower(v)
 	}
-	if hostname, err := os.Hostname(); err == nil {
-		return strings.ToLower(strings.TrimSpace(hostname))
+	if out, err := exec.Command("hostname", "-s").Output(); err == nil && len(out) > 0 {
+		return strings.ToLower(strings.TrimSpace(string(out)))
 	}
-	return "unknown"
+	out2, _ := exec.Command("hostname").Output()
+	return strings.ToLower(strings.TrimSpace(string(out2)))
 }
 
-func initKubernetesClient() error {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get in-cluster config: %v", err)
+func annotate(node string, usage int, over90time int64, isCpuBusy string) error {
+	kubectl := strings.TrimSpace(os.Getenv("KUBECTL"))
+	if kubectl == "" {
+		kubectl = "/usr/bin/kubectl"
 	}
+	node = strings.ToLower(node)
 
-	client, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return fmt.Errorf("failed to create kubernetes client: %v", err)
+	args := []string{
+		"annotate", "node", node,
+		fmt.Sprintf("%s=%d", annUsageKey, usage),
+		fmt.Sprintf("%s=%d", annDurKey, over90time),
+		fmt.Sprintf("%s=%s", annCpuBusyKey, isCpuBusy),
+		"--overwrite",
 	}
-
-	k8sClient = client
-	return nil
-}
-
-func updateNodeAnnotations(nodeName string, cpuUsage int, over90Duration int64, isCpuBusy bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-
-	patchData := map[string]interface{}{
-		"metadata": map[string]interface{}{
-			"annotations": map[string]string{
-				annUsageKey:   strconv.Itoa(cpuUsage),
-				annDurKey:     strconv.FormatInt(over90Duration, 10),
-				annCpuBusyKey: strconv.FormatBool(isCpuBusy),
-			},
-		},
+	cmd := exec.CommandContext(ctx, kubectl, args...)
+	cmd.Env = os.Environ() // KUBECONFIG 등 전달
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		log.Printf("kubectl annotate failed: %v, stderr=%s", err, strings.TrimSpace(stderr.String()))
+		return err
 	}
-
-	patchBytes, err := json.Marshal(patchData)
-	if err != nil {
-		return fmt.Errorf("failed to marshal patch data: %v", err)
-	}
-
-	_, err = k8sClient.CoreV1().Nodes().Patch(
-		ctx,
-		nodeName,
-		types.MergePatchType,
-		patchBytes,
-		metav1.PatchOptions{},
-	)
-
-	if err != nil {
-		return fmt.Errorf("failed to patch node annotations: %v", err)
-	}
-
+	log.Printf("annotate success: node=%s usage=%d%% over90time=%ds isCpuBusy=%s", node, usage, over90time, isCpuBusy)
 	return nil
 }
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-	interval := time.Second
+	interval := time.Second // 🔒 1초 고정
 	node := getNodeName()
-
 	if node == "" {
 		log.Fatal("Cannot determine node name")
 	}
-
-	if err := initKubernetesClient(); err != nil {
-		log.Fatalf("Failed to initialize Kubernetes client: %v", err)
-	}
-
 	log.Printf("mckube-cpu-agent starting: node=%s interval=%s", node, interval)
 
 	prev, err := readProcStat()
@@ -180,64 +147,59 @@ func main() {
 	time.Sleep(interval)
 
 	var over90time int64
-	var lastSentUsage = -1
-	var isCpuBusy = false
+	var lastAnnUsage = -1
+	var lastAnnTime time.Time
+	var droppedBelowTime time.Time // CPU가 90% 미만으로 떨어진 시점
+	var waitingForBusyFalse bool   // isCpuBusy를 false로 보내기 위해 대기 중인지 여부
 
 	t := time.NewTicker(interval)
 	defer t.Stop()
-
 	for range t.C {
 		cur, err := readProcStat()
 		if err != nil {
 			log.Printf("read /proc/stat error: %v", err)
 			continue
 		}
-
 		u := computeUsage(prev, cur)
 		prev = cur
 
-		cpuWasBusy := isCpuBusy
-		isCpuBusy = u > 90
-
-		if isCpuBusy {
+		if u > 90 {
 			over90time += int64(interval / time.Second)
-
-			if !cpuWasBusy {
-				log.Printf("CPU usage exceeded 90%%: node=%s usage=%d%% over90time=%ds", node, u, over90time)
-			} else if u != lastSentUsage && over90time%5 == 0 {
-				log.Printf("CPU high usage continues: node=%s usage=%d%% over90time=%ds", node, u, over90time)
-			}
 		} else {
-			if cpuWasBusy {
-				log.Printf("CPU usage normalized: node=%s usage=%d%%", node, u)
-			}
 			over90time = 0
 		}
 
-		shouldSend := false
+		log.Printf("publishing cpu usage: node=%s usage=%d%% over90time=%ds", node, u, over90time)
 
-		if isCpuBusy && !cpuWasBusy {
-			// CPU가 90% 이상으로 올라간 경우
-			shouldSend = true
-		} else if !isCpuBusy && cpuWasBusy {
-			log.Printf("CPU dropped below 90%%: node=%s usage=%d%%", node, u)
-			shouldSend = true
-		} else if isCpuBusy && over90time > 0 && over90time%5 == 0 {
-			// CPU가 계속 90% 이상이면서 5초마다 한 번씩만 업데이트
-			shouldSend = true
-		}
+		// CPU 사용량이 90% 이상일 때 annotation 갱신 (이벤트 기반 트리거)
+		if u > 90 {
+			// 90% 이상이면 대기 상태 해제
+			waitingForBusyFalse = false
 
-		if shouldSend {
-			if err := updateNodeAnnotations(node, u, over90time, isCpuBusy); err != nil {
-				log.Printf("Failed to update node annotations: %v", err)
-			} else {
-				lastSentUsage = u
-				if isCpuBusy {
-					log.Printf("Node annotations updated (HIGH CPU): node=%s usage=%d%% over90time=%ds",
-						node, u, over90time)
-				} else {
-					log.Printf("Node annotations updated (CPU normalized): node=%s usage=%d%% over90time=%ds",
-						node, u, over90time)
+			if (u != lastAnnUsage) || time.Since(lastAnnTime) > 5*time.Second {
+				if err := annotate(node, u, over90time, "true"); err == nil {
+					lastAnnUsage = u
+					lastAnnTime = time.Now()
+				}
+			}
+		} else {
+			// CPU가 90% 미만으로 떨어진 경우
+			if lastAnnUsage > 90 {
+				// 최초로 90% 미만으로 떨어진 시점
+				log.Printf("CPU dropped below 90%%, sending reset annotation: node=%s usage=%d%%", node, u)
+				if err := annotate(node, u, over90time, "true"); err == nil {
+					lastAnnUsage = u
+					lastAnnTime = time.Now()
+					droppedBelowTime = time.Now()
+					waitingForBusyFalse = true
+				}
+			} else if waitingForBusyFalse && time.Since(droppedBelowTime) >= 5*time.Second {
+				// 5초 후에도 90% 미만이면 isCpuBusy를 false로 설정
+				log.Printf("5 seconds passed below 90%%, setting isCpuBusy to false: node=%s usage=%d%%", node, u)
+				if err := annotate(node, u, over90time, "false"); err == nil {
+					lastAnnUsage = u
+					lastAnnTime = time.Now()
+					waitingForBusyFalse = false
 				}
 			}
 		}

@@ -29,7 +29,7 @@ spec:
         effect: NoSchedule
       containers:
       - name: cpu-agent
-        image: noru0817/cpu_util_sender:0.0.4
+        image: noru0817/cpu_util_sender:0.0.6
         imagePullPolicy: IfNotPresent
         env:
         - name: NODE_NAME
