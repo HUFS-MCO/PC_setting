@@ -197,9 +197,6 @@ func applyCgroup(containerID string, period int, runtime int, core *string, only
 	if !tokenContains(string(rootControllers), "cpu") {
 		return fmt.Errorf("cpu controller not available in cgroup v2 (cgroup.controllers)")
 	}
-	parentDir := filepath.Dir(containerCgPath)
-	subtreeCtl, err := os.ReadFile(filepath.Join(parentDir, cgroupSubtreeControl))
-
 	// 2) system-wide RT group scheduling must be enabled and limits respected
 	globalRTPeriod, err := readIntFromFile(procSchedRTPeriod)
 	if err != nil {
@@ -312,21 +309,33 @@ func writeRtValues(cgPath string, period int, runtime int, core *string, periodD
 		writeRuntime = 0
 	}
 
+	cpuRTPeriodPath := filepath.Join(cgPath, cgroupRTPeriod)
+
 	if periodDecreasing || runtimeDecreasing || multiRuntimeDecreasing {
 		// When decreasing, set runtime first, then period
 		if err := writeRuntimeFile(cgPath, writeRuntime, core); err != nil {
 			return err
 		}
 
-		cpuRTPeriodPath := filepath.Join(cgPath, cgroupRTPeriod)
-		if err := writeCgroupFile(cpuRTPeriodPath, fmt.Sprintf("%d", period)); err != nil {
-			return err
+		// Check if period needs to be updated
+		currentPeriod, err := readIntFromFile(cpuRTPeriodPath)
+		if err == nil && currentPeriod == period {
+			log.Printf("Period already matches for %s: %d, skipping write", cgPath, period)
+		} else {
+			if err := writeCgroupFile(cpuRTPeriodPath, fmt.Sprintf("%d", period)); err != nil {
+				return err
+			}
 		}
 	} else {
 		// When increasing, set period first, then runtime
-		cpuRTPeriodPath := filepath.Join(cgPath, cgroupRTPeriod)
-		if err := writeCgroupFile(cpuRTPeriodPath, fmt.Sprintf("%d", period)); err != nil {
-			return err
+		// Check if period needs to be updated
+		currentPeriod, err := readIntFromFile(cpuRTPeriodPath)
+		if err == nil && currentPeriod == period {
+			log.Printf("Period already matches for %s: %d, skipping write", cgPath, period)
+		} else {
+			if err := writeCgroupFile(cpuRTPeriodPath, fmt.Sprintf("%d", period)); err != nil {
+				return err
+			}
 		}
 
 		if err := writeRuntimeFile(cgPath, writeRuntime, core); err != nil {
