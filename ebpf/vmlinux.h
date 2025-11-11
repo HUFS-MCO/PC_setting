@@ -88531,8 +88531,8 @@ struct pinctrl_desc {
 };
 
 struct intel_pinctrl_context {
-	struct intel_pad_context___2 *pads;
-	struct intel_community_context___2 *communities;
+	struct intel_pad_context___3 *pads;
+	struct intel_community_context *communities;
 };
 
 struct intel_pinctrl_soc_data;
@@ -88571,8 +88571,8 @@ struct intel_pinctrl___2 {
 };
 
 struct intel_pinctrl_context___3 {
-	struct intel_pad_context___3 *pads;
-	struct intel_community_context *communities;
+	struct intel_pad_context___2 *pads;
+	struct intel_community_context___2 *communities;
 };
 
 struct intel_pinctrl___3 {
@@ -159005,9 +159005,9 @@ typedef void (*xhci_get_quirks_t)(struct device *, struct xhci_hcd *);
 
 typedef ZSTD_sequenceProducer_F zstd_sequence_producer_f;
 
-struct nf_bridge_frag_data;
-
 struct dmem_cgroup_region;
+
+struct nf_bridge_frag_data;
 
 struct bpf_iter;
 

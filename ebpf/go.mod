@@ -1,6 +1,6 @@
 module hcbs-agent-min
 
-go 1.25.0
+go 1.25.3
 
 require (
 	github.com/cilium/ebpf v0.14.0 // indirect

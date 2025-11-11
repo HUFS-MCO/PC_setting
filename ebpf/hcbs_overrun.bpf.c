@@ -31,7 +31,7 @@ struct last_state {
 SEC(".maps")
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 20);
+    __uint(max_entries, 1 << 24);  // 16MB (원래 1MB에서 증가)
 } events SEC(".maps");
 
 SEC(".maps")
@@ -78,7 +78,7 @@ int BPF_PROG(on_update_curr_dl_se, struct rq *rq, struct sched_dl_entity *dl_se,
             return 0;
     }
 
-    // 6️⃣ 첫 소진 이벤트만 전송
+    // 6️⃣ 첫 소진 이벤트만 전송 
     if (st->was_pos && runtime <= 0 && throttled && BPF_CORE_READ(dl_se, dl_runtime) != 50000000) {
         struct event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
         if (e) {

@@ -27,17 +27,13 @@ const (
 	
 	// API Server 통신 설정
 	apiServerPort = "8888"
+	apiEndpoint   = "/api/v1/nodes/%s/annotations"
 )
 
 // ResponseMessage 응답용 구조체
 type ResponseMessage struct {
 	Message string `json:"message"`
 	Success bool   `json:"success"`
-}
-
-// NodeAnnotationRequest HTTP 요청용 구조체
-type NodeAnnotationRequest struct {
-	Annotations map[string]string `json:"annotations"`
 }
 
 type cpuSample struct{ idle, total uint64 }
@@ -118,6 +114,11 @@ func getNodeName() string {
 		return strings.ToLower(strings.TrimSpace(hostname))
 	}
 	return "unknown"
+}
+
+// NodeAnnotationRequest HTTP 요청용 구조체
+type NodeAnnotationRequest struct {
+	Annotations map[string]string `json:"annotations"`
 }
 
 // updateNodeAnnotations kubectl을 통해 실제 node annotation 업데이트
@@ -287,6 +288,88 @@ func startAPIServer() {
 	if err := server.ListenAndServe(); err != nil {
 		log.Printf("API server failed: %v", err)
 	}
+}
+
+// annotateViaHTTP HTTP API를 통한 node annotation 업데이트
+func annotateViaHTTP(node string, usage int, over90time int64, isCpuBusy string) error {
+	// API Server 주소 설정 (마스터 노드 또는 로드밸런서 주소)
+	apiServerHost := strings.TrimSpace(os.Getenv("API_SERVER_HOST"))
+	if apiServerHost == "" {
+		apiServerHost = "localhost" // 기본값
+	}
+	
+	url := fmt.Sprintf("http://%s:%s%s", apiServerHost, apiServerPort, fmt.Sprintf(apiEndpoint, node))
+	
+	// 요청 데이터 생성
+	reqData := NodeAnnotationRequest{
+		Annotations: map[string]string{
+			annUsageKey:   fmt.Sprintf("%d", usage),
+			annDurKey:     fmt.Sprintf("%d", over90time),
+			annCpuBusyKey: isCpuBusy,
+		},
+	}
+	
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request data: %v", err)
+	}
+	
+	// HTTP 요청 생성
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	
+	req, err := http.NewRequestWithContext(ctx, "PATCH", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+	
+	req.Header.Set("Content-Type", "application/json")
+	
+	// 인증 토큰 추가 (ServiceAccount 토큰)
+	if token := strings.TrimSpace(os.Getenv("SERVICE_ACCOUNT_TOKEN")); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	
+	// HTTP 클라이언트로 요청 전송
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+	}
+	
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send HTTP request: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	// 응답 확인
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+	
+	log.Printf("annotate success via HTTP: node=%s usage=%d%% over90time=%ds isCpuBusy=%s", 
+		node, usage, over90time, isCpuBusy)
+	return nil
+}
+
+// annotate kubectl 명령어 기반 annotation 업데이트 (fallback)
+func annotateViaKubectl(node string, usage int, over90time int64, isCpuBusy string) error {
+	// SERVICE_ACCOUNT_TOKEN 환경변수가 있으면 HTTP API 우선 사용
+	if strings.TrimSpace(os.Getenv("SERVICE_ACCOUNT_TOKEN")) != "" {
+		if err := annotateViaHTTP(node, usage, over90time, isCpuBusy); err == nil {
+			return nil
+		}
+		log.Printf("HTTP API failed, falling back to kubectl: %v", err)
+	}
+	
+	// kubectl 명령어 실행 (기존 방식)
+	return annotateViaKubectlDirect(node, usage, over90time, isCpuBusy)
+}
+
+func annotateViaKubectlDirect(node string, usage int, over90time int64, isCpuBusy string) error {
+	// kubectl은 더 이상 import하지 않으므로 외부 명령어로 실행
+	log.Printf("kubectl method not available in HTTP-only mode")
+	return fmt.Errorf("kubectl method not available")
 }
 
 func main() {

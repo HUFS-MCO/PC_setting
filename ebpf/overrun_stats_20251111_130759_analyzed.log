@@ -1,0 +1,79 @@
+=== HCBS Overrun Analysis with QoS Classes ===
+Timestamp: 2025-11-11 13:08:10
+
+LOW        8c07f65575a8abc8511372511ca3dddcf05ae84e1ce60b3d21a5ae2b60eb0e9a   448   default/eq-test-eq-task-chart-low-5
+LOW        4a683efc90ebf6094ce0a1e8283acd6a5d4b1f53133e351d6d41d61f43ad26a2   183   default/eq-test-eq-task-chart-low-14
+LOW        d6765b499da4c8672fccc1f0a2569644f379b7e272adea9ac607acb9ee5e651b   157   default/eq-test-eq-task-chart-low-3
+LOW        b1291192837c6d985a61e5d91ec46afbfacd7bd807c9129a1c9141fefb8a6952   151   default/eq-test-eq-task-chart-low-27
+LOW        caeb5f28df121a8ff5ee40cdbd2d9812d53ad62b593602657820e2c2e85b930d   138   default/eq-test-eq-task-chart-low-8
+LOW        67d32987d849c31b35b2ef4277630130badedef72aae322fa336019743411b2f   125   default/eq-test-eq-task-chart-low-10
+LOW        aacbf2e4495c50ca8eacd86c54568764f34d09b15ceda111d8512b0cbe197742   105   default/eq-test-eq-task-chart-low-6
+LOW        44d85c5d927e25e4e4cb7c570616c141e5b0f6d655a5c161b11e58a30b3d6d92   103   default/eq-test-eq-task-chart-low-16
+LOW        1f05ce111a52c0e46647e3449dcf9c397ce9931382b37d3f64589cc8e88c7937    93   default/eq-test-eq-task-chart-low-4
+LOW        c1a6afabb838a2530e8828fe6a22ab052667203a1daa5c2a11f50a2dcc32cad3    88   default/eq-test-eq-task-chart-low-2
+MEDIUM     65966a10ebaf9d3b5afe15c9cb991cef0a682e9f36e1b60d490ad3b7bae26b97    82   default/eq-test-eq-task-chart-middle-10
+HIGH       c61fdc269df0f66d667f19c9610899219c706c1523a2106c23410791c1ea24c9    76   default/eq-test-eq-task-chart-high-8
+MEDIUM     393ad64d8096dcf9ccdebcf57194ddfd5ee4a8f496e2990f3b38e592ef3b42fa    73   default/eq-test-eq-task-chart-middle-19
+LOW        95e6bd24c99816870cb2900d83a78d37c6213d73b277d47d92ee355330de1284    70   default/eq-test-eq-task-chart-low-29
+MEDIUM     2e2c27e7c6cc18a7dd7f717fb23213174722ace37d0f6f06ee66c9da7061049e    57   default/eq-test-eq-task-chart-middle-3
+LOW        a2304f0a88c59f26217a3d887d94ee90c9e9dd952d60c09b06d615725ddad53c    57   default/eq-test-eq-task-chart-low-1
+LOW        b48cea8cb18ce1642262d6afd60b2a324bd4c6d160fd22dfa14955aafea0872c    53   default/eq-test-eq-task-chart-low-15
+LOW        0403980edf558819ac1d3a4c9d88197d424ed59a4000923b9ce4277a02d791d0    50   default/eq-test-eq-task-chart-low-28
+MEDIUM     1c39c7e4b610ee0145fb7a6365643db3ba2a2589ea3e41c1079c9b584d78dd08    48   default/eq-test-eq-task-chart-middle-2
+LOW        9d9e65369bf0ea80f4f3957000cce8a6204690a016aa2ca4110dd74c55b4f5fa    47   default/eq-test-eq-task-chart-low-25
+LOW        2b92053ce1799353a5c31c8ea277a1d5e475dca4112b489f9d80b95e2becc76a    33   default/eq-test-eq-task-chart-low-21
+LOW        ab6c7bf1d45fe17d24360fcd6b1a5bb03b39415d525e1f7e0280aa981af2b15b    31   default/eq-test-eq-task-chart-low-30
+MEDIUM     56d0a85cc893fb7856d434e6b3512e6e352622cffa88eb0de83e9fac8b4ff8a1    23   default/eq-test-eq-task-chart-middle-14
+HIGH       a4efbe44ea5999692e4b5de64c384f953bebdcef7b95bc12007f283a609f329f    23   default/eq-test-eq-task-chart-high-7
+MEDIUM     fc681e0ff4f011d6d7304d61ee88fa6bc15a8fc56be5b0d51b6a5e8caac47bbf    21   default/eq-test-eq-task-chart-middle-9
+HIGH       890a692b8af3ba5aab097cd3b7a6e2d19e48cf78575eef6932eb550751fbddd5    18   default/eq-test-eq-task-chart-high-2
+LOW        40e70c79078eba5938742b389300889c690526e2742bc8ea7f7eeed02dcdcdef    16   default/eq-test-eq-task-chart-low-11
+HIGH       a5c3a82251024719b9a0c9e30f3deb02b11cc413da9c636738fd891b648cf6e1    15   default/eq-test-eq-task-chart-high-11
+LOW        322a4602d4c0f85061b55f1f2ee3530b13ed51b47555ce9c10593db5c6eccf9a    15   default/eq-test-eq-task-chart-low-17
+MEDIUM     92dddf6cfcc35fda3751a0c848c9fc75465b3009fbd531b6cf9e42fefc8395ee    14   default/eq-test-eq-task-chart-middle-5
+MEDIUM     0f94ca01fb714b57faaddb2cae3632ca4e6a9744060e2db5ee4fa91be8223568    13   default/eq-test-eq-task-chart-middle-1
+LOW        27bd3897848d269d4274f7ab3a40131077e499f07604602e7c36a647fbd6de34    13   default/eq-test-eq-task-chart-low-7
+LOW        f713608991d799feac69ca96ad2cbf63ce9455558ec7cf225bd71c01e4eed65f    13   default/eq-test-eq-task-chart-low-19
+LOW        57899f031fc3fe0613568b107c1278826e1c6104b6996009c352a1201823563b    12   default/eq-test-eq-task-chart-low-0
+MEDIUM     cc975d7693d7c2e401b864c0e513d85e183938e40fad524f9d3d7165ce73a2f9    12   default/eq-test-eq-task-chart-middle-21
+MEDIUM     91d12f6dd88a40580d039f1beb231985e919340c7cb1f881b433578206c88dc3    11   default/eq-test-eq-task-chart-middle-17
+HIGH       e1ff31c6fa4ee6a052eac1d435330bb75c8b472ac433134e26dd55bda5260511    10   default/eq-test-eq-task-chart-high-4
+HIGH       9954a67084f1475e811e38e80c61f3e20cd7a71ad4632706395d114e7e2c0168    10   default/eq-test-eq-task-chart-high-3
+LOW        a5f8c4ae913d574a2f86eaa04e9cb47fa37a1d8598c66da697db64dd9123c3fb     7   default/eq-test-eq-task-chart-low-9
+MEDIUM     f3a13a5613b498f0fd8ea33f09f0ad9fb9baa2b86b866174b26b576c48b6a58c     6   default/eq-test-eq-task-chart-middle-4
+HIGH       8138b0ec191ed2f91fd826adf816c96587d57011d0380fb93309dcc90f4c4d80     6   default/eq-test-eq-task-chart-high-10
+MEDIUM     0f0905aca3bda95fa8846f96d48e8c84f82466c7bdbeb8ef5474ba969ea9dbf6     6   default/eq-test-eq-task-chart-middle-18
+LOW        8d5bf7112dd1f9817a86897d61587b0a2eeae1fbd60a8fdf9bab0f550563ecc9     6   default/eq-test-eq-task-chart-low-12
+HIGH       217aec9a7ba1fc6131327dc69bbd9a085d7e1594201b3c5d0763651be7d89ee5     6   default/eq-test-eq-task-chart-high-13
+MEDIUM     85f37a7cc5aff199d8873ae42bcfedb5d6447877597ab5dddd76c475bd8177cb     5   default/eq-test-eq-task-chart-middle-22
+MEDIUM     b502ed8045a89c59da3d7543a04aa05046aa4bc059ec9a561b36103d392c22d7     5   default/eq-test-eq-task-chart-middle-6
+MEDIUM     2acbb582a0195d2921208dcf245bef2d56ba579668e166d861c936594ffcfc37     4   default/eq-test-eq-task-chart-middle-12
+MEDIUM     c7d6a451686e0903d54c4fe4055d507557d0ad0e8e7b0c9cd67d2f508cf2e1f7     4   default/eq-test-eq-task-chart-middle-16
+LOW        6ae5336197e52ce8d52de9778ac9409d08fbfefc0f7decca4b35597530dd0531     3   default/eq-test-eq-task-chart-low-13
+HIGH       dc7d3be8a4e0c0234628e4c7b5d7372df54008bd6345d5d3b34e012809b79836     3   default/eq-test-eq-task-chart-high-6
+MEDIUM     322ba9a726e17fc03fcfcd23cd4cb65ecc2e84f4731b9dbf5f13eb622d4fe036     3   default/eq-test-eq-task-chart-middle-11
+MEDIUM     a57f27daf45a2931d05c9217d9875e93e6c5e3dd63fc3df333c00e2f57009296     3   default/eq-test-eq-task-chart-middle-7
+LOW        507c6c7fa58b4a6bb02c69411e68b1fc429146e9a478ae48a52998dd6e181044     3   default/eq-test-eq-task-chart-low-20
+MEDIUM     d8faa0cf1ddb0dd910d89fa600d0109df35be9892bd15db6e02885754948348d     3   default/eq-test-eq-task-chart-middle-0
+HIGH       7d19ddea5d8e8e5ba3267596cd38f13696e87a69b17c68e8047aaea9e636fa47     3   default/eq-test-eq-task-chart-high-1
+MEDIUM     cf1039c0bb47b75a7f8ee5e658a1a46bf2a24d36a5f034cd9d50de762cd64d3c     2   default/eq-test-eq-task-chart-middle-20
+LOW        3b4fe4b18ac2d3b1cf13be1076d580ced7094541834be48b9115b93bfa8b5e29     2   default/eq-test-eq-task-chart-low-22
+MEDIUM     cdecf4be99f1f452215eab5b191eec6b225bc3ac2095926162ca403792158254     2   default/eq-test-eq-task-chart-middle-13
+HIGH       b8324e4641f17a65b6cdb7c3ded646d7ef3c21ace8ecbe0192abb852691f05c4     2   default/eq-test-eq-task-chart-high-5
+LOW        c6bd003002938d64dcf6e4ffa151bb42387a3a923f2927358c0de90994de2997     2   default/eq-test-eq-task-chart-low-24
+LOW        78de0827e61fa72ce3439aa36388fe6a663ee735dc51654c0d46832ce5741570     2   default/eq-test-eq-task-chart-low-26
+HIGH       08cd766f37fc88075d76fa99e39aa65483c345343b83bad45bf08256e6bc3c6b     1   default/eq-test-eq-task-chart-high-9
+HIGH       4ee3507d376d6678521205416906cc1211ba080f9dcca8c6da4f0a30b26fe02b     1   default/eq-test-eq-task-chart-high-15
+HIGH       2c2edb4d5e886c48c09d5a6498013b63d665ac6c61c28c5ee1496583291d29b7     1   default/eq-test-eq-task-chart-high-0
+LOW        4be417c3022e10c9fbb74b2769774c726a411b644fda457f6aa0dd6637e09dc4     1   default/eq-test-eq-task-chart-low-23
+MEDIUM     9969babfa89813774bb1ac82b78ba03c21ec65f6f1808ead0c74781832703342     1   default/eq-test-eq-task-chart-middle-23
+HIGH       673648a4e44ea44f0930e8c36013f215a56052a2cdc164113c2f6720a516f158     1   default/eq-test-eq-task-chart-high-12
+
+=== Summary by QoS Class ===
+QoS Class     Containers    Total Overruns    Avg Overruns
+============================================================
+LOW           30            2027              67
+MEDIUM        22            398               18
+HIGH          15            176               11
+------------------------------------------------------------
+TOTAL         67            2601             

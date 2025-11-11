@@ -10,12 +10,9 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/cilium/ebpf"
@@ -197,12 +194,13 @@ func extractContainerID(path string) (containerID string, ok bool) {
 	return "", false
 }
 
-// ===== Controller POST (timestamp 포함) =====
+// ===== Controller POST (uid만 전달) =====
 func postToController(url, CID string, e Event, cgidPath string) {
 	if url == "" {
 		return
 	}
-	body := fmt.Sprintf(`{"container_id":%q,"timestamp":%d}`, CID, e.TS)
+	body := fmt.Sprintf(`{"container_id":%q}`,CID) //,"ts":%d,"cpu":%d,"runtime_ns":%d,"cgid_path":%q
+		//, e.TS, e.CPU, e.RuntimeNS, cgidPath)
 	req, _ := http.NewRequest("POST", url, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
@@ -258,48 +256,6 @@ func getenv(k, def string) string {
 	return def
 }
 
-// ===== 통계 저장 함수 =====
-func saveStats(overrunCount map[string]int, totalCnt int) {
-	timestamp := time.Now().Format("20060102_150405")
-	filename := fmt.Sprintf("overrun_stats_%s.log", timestamp)
-	
-	f, err := os.Create(filename)
-	if err != nil {
-		log.Printf("Failed to create stats file: %v", err)
-		return
-	}
-	defer f.Close()
-
-	fmt.Fprintf(f, "=== HCBS Overrun Statistics ===\n")
-	fmt.Fprintf(f, "Timestamp: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(f, "Total Overruns: %d\n", totalCnt)
-	fmt.Fprintf(f, "Unique Containers: %d\n\n", len(overrunCount))
-	
-	// Container별 정렬하여 출력
-	type ContainerStat struct {
-		CID   string
-		Count int
-	}
-	
-	var stats []ContainerStat
-	for cid, count := range overrunCount {
-		stats = append(stats, ContainerStat{CID: cid, Count: count})
-	}
-	
-	// 횟수 내림차순 정렬
-	sort.Slice(stats, func(i, j int) bool {
-		return stats[i].Count > stats[j].Count
-	})
-	
-	fmt.Fprintf(f, "Container ID\t\t\t\t\t\tOverrun Count\n")
-	fmt.Fprintf(f, "============================================================\n")
-	for _, stat := range stats {
-		fmt.Fprintf(f, "%s\t%d\n", stat.CID, stat.Count)
-	}
-	
-	log.Printf("Statistics saved to %s", filename)
-}
-
 func main() {
 	log.SetFlags(0)
 
@@ -327,25 +283,7 @@ func main() {
 	defer coll.Close()
 
 	log.Printf("HCBS overrun agent running. (send only podUID)")
-
-	//cnt := 0
-	
-	// Container ID별 overrun 횟수 추적
-	overrunCount := make(map[string]int)
-	totalCnt := 0
-	
-	// 시그널 핸들러 설정 (Ctrl+C)
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
-	// 고루틴으로 시그널 대기
-	go func() {
-		<-sigChan
-		log.Printf("\nReceived interrupt signal. Saving statistics...")
-		saveStats(overrunCount, totalCnt)
-		os.Exit(0)
-	}()
-	
+	cnt := 0
 	// 3) event loop
 	for {
 		rec, err := rb.Read()
@@ -362,8 +300,8 @@ func main() {
 			log.Printf("Binary Err")
 			continue
 		}
-		//log.Printf("[%d] overrun detected! : %d", cnt, ev.TS)
-		//cnt += 1
+		log.Printf("[%d] overrun detected! : %d", cnt, ev.TS)
+		cnt += 1
 
 		// cgid → path
 		path, ok := pc.Lookup(ev.Cgid)
@@ -384,13 +322,9 @@ func main() {
 			continue
 		}
 
-		// Container별 overrun 횟수 증가
-		overrunCount[cid]++
-		totalCnt++
-		
-		// 로컬 로그 (Container ID별 횟수 출력)
-		log.Printf("[Total: %d] Container %s... overrun count: %d (ts=%d, cpu=%d, runtime=%d ns)",
-			totalCnt, cid[:12], overrunCount[cid], ev.TS, ev.CPU, ev.RuntimeNS)
+		// 로컬 로그
+		//log.Printf("[ts=%d] cpu=%d containerID=%s runtime=%d ns\n",
+		//	ev.TS, ev.CPU, cid, ev.RuntimeNS)
 
 		// 컨트롤러로 uid만 전송
 		
