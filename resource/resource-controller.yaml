@@ -17,7 +17,7 @@ spec:
       hostNetwork: true  # Use host network for easier communication
       containers:
       - name: resource-controller
-        image: ghcr.io/hufs-mco/resource-controller  # Replace with your registry path
+        image: ghcr.io/hufs-mco/resource-controller:refactor  # Replace with your registry path
         imagePullPolicy: Always
         securityContext:
           privileged: true  # Required for cgroup access
